@@ -11,8 +11,12 @@ function analyzeDeliveryEvents() {
         }
 
         const content = fs.readFileSync(logPath, 'utf8');
-        if (!content) {
-            throw new Error('No se pudo leer el archivo de log');
+        if (!content || content.trim().length === 0) {
+            return {
+                error: false,
+                data: [],
+                message: 'No hay eventos registrados en el log.'
+            };
         }
 
         const lines = content.split(/\r?\n/);
@@ -107,7 +111,8 @@ function processDeliveryData(logData) {
             minutos_para_asignar,
             minutos_para_pickup,
             // minutos_para_dropoff,
-            minutos_para_entregar
+            minutos_para_entregar,
+            fecha_hora_creacion: eventMap.pending ?? null
         };
     }
 
@@ -124,24 +129,27 @@ async function saveDelivery(data) {
     try {
         const sql = `
         INSERT INTO delivery_tiempos
-            (id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar)
-        VALUES ($1, $2, $3, $4)
+            (id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (id_delivery) DO UPDATE
         SET minutos_para_asignar = EXCLUDED.minutos_para_asignar,
             minutos_para_pickup = EXCLUDED.minutos_para_pickup,
-            minutos_para_entregar = EXCLUDED.minutos_para_entregar
+            minutos_para_entregar = EXCLUDED.minutos_para_entregar,
+            fecha_hora_creacion = EXCLUDED.fecha_hora_creacion
         `;
 
         for (const [deliveryId, deliveryData] of Object.entries(data)) {
             const minutosAsignar = deliveryData.minutos_para_asignar ?? null;
             const minutosPickup = deliveryData.minutos_para_pickup ?? null;
             const minutosEntregar = deliveryData.minutos_para_entregar ?? null;
+            const fecha_hora_creacion = deliveryData.fecha_hora_creacion ?? null;
 
             await client.query(sql, [
                 deliveryId,
                 minutosAsignar,
                 minutosPickup,
                 minutosEntregar,
+                fecha_hora_creacion,
             ]);
         }
     } catch (err) {
