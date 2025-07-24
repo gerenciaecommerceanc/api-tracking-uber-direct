@@ -125,7 +125,12 @@ async function saveDelivery(data) {
         const sql = `
         INSERT INTO delivery_tiempos
             (id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar)
-        VALUES ($1, $2, $3, $4)`;
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (id_delivery) DO UPDATE
+        SET minutos_para_asignar = EXCLUDED.minutos_para_asignar,
+            minutos_para_pickup = EXCLUDED.minutos_para_pickup,
+            minutos_para_entregar = EXCLUDED.minutos_para_entregar
+        `;
 
         for (const [deliveryId, deliveryData] of Object.entries(data)) {
             const minutosAsignar = deliveryData.minutos_para_asignar ?? null;
@@ -146,6 +151,41 @@ async function saveDelivery(data) {
     }
 }
 
+async function getAllDeliveryTimes() {
+    const client = await pool.connect();
+    try {
+        const sql = `
+            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar
+            FROM delivery_tiempos
+        `;
+
+        const res = await client.query(sql);
+
+        // Crear un mapa indexado por id_delivery
+        const map = {};
+
+        for (const row of res.rows) {
+            map[row.id_delivery] = {
+                minutos_para_asignar: row.minutos_para_asignar,
+                minutos_para_pickup: row.minutos_para_pickup,
+                minutos_para_entregar: row.minutos_para_entregar,
+            };
+        }
+
+        return map;
+
+    } catch (err) {
+        console.error('Error al obtener datos de delivery_tiempos:', err.message);
+        return {
+            error: true,
+            data: []
+        };
+    } finally {
+        client.release();
+    }
+}
+
 module.exports = {
-  analyzeDeliveryEvents
+  analyzeDeliveryEvents,
+  getAllDeliveryTimes
 };
