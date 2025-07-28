@@ -256,7 +256,46 @@ async function getAllDeliveryTimes() {
     }
 }
 
+async function getDeliveryTimesByDateRange(desde, hasta) {
+    const client = await pool.connect();
+    try {
+        const sql = `
+            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion
+            FROM delivery_tiempos
+            WHERE fecha_hora_creacion BETWEEN $1 AND $2
+        `;
+
+        // Convertimos las fechas a rangos precisos de día completo (00:00:00 a 23:59:59)
+        const desdeInicio = `${desde} 00:00:00`;
+        const hastaFin = `${hasta} 23:59:59`;
+
+        const res = await client.query(sql, [desdeInicio, hastaFin]);
+
+        const map = {};
+        for (const row of res.rows) {
+            map[row.id_delivery] = {
+                minutos_para_asignar: row.minutos_para_asignar,
+                minutos_para_pickup: row.minutos_para_pickup,
+                minutos_para_entregar: row.minutos_para_entregar,
+                fecha_hora_creacion: row.fecha_hora_creacion,
+            };
+        }
+
+        return map;
+
+    } catch (err) {
+        console.error('Error al obtener datos de delivery_tiempos:', err.message);
+        return {
+            error: true,
+            data: []
+        };
+    } finally {
+        client.release();
+    }
+}
+
 module.exports = {
   analyzeDeliveryEvents,
-  getAllDeliveryTimes
+  getAllDeliveryTimes,
+  getDeliveryTimesByDateRange
 };

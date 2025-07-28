@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { analyzeDeliveryEvents, getAllDeliveryTimes } = require('../../controllers/PickupController');
+const { analyzeDeliveryEvents, getAllDeliveryTimes, getDeliveryTimesByDateRange } = require('../../controllers/PickupController');
+const { DateTime } = require('luxon');
 
 // Middleware para manejar CORS y OPTIONS
 router.use((req, res, next) => {
@@ -28,5 +29,26 @@ router.get('/delivery-times', async (req, res) => {
     const result = await getAllDeliveryTimes();
     res.status(result.error ? 500 : 200).json(result);
 })
+
+// Ruta GET /delivery-times/:desde/:hasta con filtro por fechas
+router.get('/delivery-times/:desde/:hasta', async (req, res) => {
+    let { desde, hasta } = req.params;
+
+    // Si se envía solo 'desde', usamos hoy como 'hasta'
+    if (desde && !hasta) {
+        hasta = new Date().toISOString().split('T')[0]; // YYYY-MM-DD de hoy en UTC
+    }
+
+    // Si no se envía 'desde', error
+    if (!desde) {
+        return res.status(400).json({
+            error: true,
+            message: 'Debes proporcionar al menos la fecha desde (YYYY-MM-DD)'
+        });
+    }
+
+    const result = await getDeliveryTimesByDateRange(desde, hasta);
+    res.status(result.error ? 500 : 200).json(result);
+});
 
 module.exports = router;
