@@ -139,7 +139,8 @@ function processDeliveryData(logData) {
             minutos_para_asignar,
             minutos_para_pickup,
             minutos_para_entregar,
-            fecha_hora_creacion: eventMap.pending ?? null
+            fecha_hora_creacion: eventMap.pending ?? null,
+            fecha_hora_entrega: eventMap.delivered ?? null
         };
     }
 
@@ -175,7 +176,8 @@ function processDeliveryData(logData) {
             minutos_para_asignar,
             minutos_para_pickup,
             minutos_para_entregar,
-            fecha_hora_creacion: eventMap.created ?? null
+            fecha_hora_creacion: eventMap.created ?? null,
+            fecha_hora_entrega: eventMap.delivered ?? null
         };
     }
 
@@ -192,13 +194,14 @@ async function saveDelivery(data) {
     try {
         const sql = `
         INSERT INTO delivery_tiempos
-            (id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion)
-        VALUES ($1, $2, $3, $4, $5)
+            (id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion, fecha_hora_entrega)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (id_delivery) DO UPDATE
         SET minutos_para_asignar = EXCLUDED.minutos_para_asignar,
             minutos_para_pickup = EXCLUDED.minutos_para_pickup,
             minutos_para_entregar = EXCLUDED.minutos_para_entregar,
-            fecha_hora_creacion = EXCLUDED.fecha_hora_creacion
+            fecha_hora_creacion = EXCLUDED.fecha_hora_creacion,
+            fecha_hora_entrega = EXCLUDED.fecha_hora_entrega
         `;
 
         for (const [deliveryId, deliveryData] of Object.entries(data)) {
@@ -206,6 +209,7 @@ async function saveDelivery(data) {
             const minutosPickup = deliveryData.minutos_para_pickup ?? null;
             const minutosEntregar = deliveryData.minutos_para_entregar ?? null;
             const fecha_hora_creacion = deliveryData.fecha_hora_creacion ?? null;
+            const fecha_hora_entrega = deliveryData.fecha_hora_entrega ?? null;
 
             await client.query(sql, [
                 deliveryId,
@@ -213,6 +217,7 @@ async function saveDelivery(data) {
                 minutosPickup,
                 minutosEntregar,
                 fecha_hora_creacion,
+                fecha_hora_entrega,
             ]);
         }
     } catch (err) {
@@ -226,7 +231,7 @@ async function getAllDeliveryTimes() {
     const client = await pool.connect();
     try {
         const sql = `
-            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion
+            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion, fecha_hora_entrega
             FROM delivery_tiempos
         `;
 
@@ -240,6 +245,8 @@ async function getAllDeliveryTimes() {
                 minutos_para_asignar: row.minutos_para_asignar,
                 minutos_para_pickup: row.minutos_para_pickup,
                 minutos_para_entregar: row.minutos_para_entregar,
+                fecha_hora_creacion: row.fecha_hora_creacion,
+                fecha_hora_entrega: row.fecha_hora_entrega,
             };
         }
 
@@ -260,7 +267,7 @@ async function getDeliveryTimesByDateRange(desde, hasta) {
     const client = await pool.connect();
     try {
         const sql = `
-            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion
+            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion, fecha_hora_entrega
             FROM delivery_tiempos
             WHERE fecha_hora_creacion BETWEEN $1 AND $2
         `;
@@ -278,6 +285,7 @@ async function getDeliveryTimesByDateRange(desde, hasta) {
                 minutos_para_pickup: row.minutos_para_pickup,
                 minutos_para_entregar: row.minutos_para_entregar,
                 fecha_hora_creacion: row.fecha_hora_creacion,
+                fecha_hora_entrega: row.fecha_hora_entrega,
             };
         }
 
