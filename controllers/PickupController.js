@@ -2,41 +2,53 @@ const fs = require('fs');
 const path = require('path');
 const pool = require('../db/connection');
 
+function readLines(filePath, source) {
+    if (!fs.existsSync(filePath)) {
+        console.warn(`Archivo de log no encontrado: ${filePath}`);
+        return [];
+    }
+
+    const content = fs.readFileSync(filePath, 'utf8');
+    if (!content || content.trim().length === 0) {
+        console.warn(`El archivo ${filePath} está vacío.`);
+        return [];
+    }
+
+    const lines = content.split(/\r?\n/).filter(Boolean);
+    const results = [];
+
+    for (const line of lines) {
+        try {
+            const parsed = JSON.parse(line.trim());
+
+            // Para eventos de Uber, validar que tenga delivery_id
+            if (source === 'uber') {
+                const delivery_id = parsed?.data?.id;
+                if (!delivery_id) continue;
+                parsed.delivery_id = delivery_id;
+            }
+
+            parsed.source = source;
+            results.push(parsed);
+        } catch (err) {
+            // línea inválida, se ignora
+        }
+    }
+
+    return results;
+}
+
 function analyzeDeliveryEvents() {
     try {
-        const logPath = path.join(__dirname, '..', 'logs', 'deliveries.log');
+        const enviaPath = path.join(__dirname, '..', 'logs', 'envia.log');
+        const deliveriesPath = path.join(__dirname, '..', 'logs', 'deliveries.log');
 
-        if (!fs.existsSync(logPath)) {
-            throw new Error(`El archivo de log no existe: ${logPath}`);
-        }
+        const enviaEvents = readLines(enviaPath, 'envia');
+        const uberEvents = readLines(deliveriesPath, 'uber');
 
-        const content = fs.readFileSync(logPath, 'utf8');
-        if (!content || content.trim().length === 0) {
-            return {
-                error: false,
-                data: [],
-                message: 'No hay eventos registrados en el log.'
-            };
-        }
+        const allEvents = [...enviaEvents, ...uberEvents];
 
-        const lines = content.split(/\r?\n/);
-        const logData = [];
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            try {
-                const data = JSON.parse(trimmed);
-                if (data.delivery_id) {
-                    logData.push(data);
-                }
-            } catch (err) {
-                // línea inválida, se ignora
-            }
-        }
-
-        return processDeliveryData(logData);
+        return processDeliveryData(allEvents);
 
     } catch (err) {
         console.error('Error en saveDelivery:', err);
@@ -48,30 +60,51 @@ function analyzeDeliveryEvents() {
 }
 
 function processDeliveryData(logData) {
-    const deliveryTimelines = {};
+    const deliveryTimelinesUber = {};
+    const deliveryTimelinesEnvia = {};
     const results = {};
 
     // Agrupar eventos por delivery_id
     for (const entry of logData) {
-        const deliveryId = entry.delivery_id;
-        const timestamp = entry.created;
-        const status = entry.status || 'unknown';
+        
+        if (entry.source == "uber") {
+            const deliveryId = entry.delivery_id;
+            const timestamp = entry.created;
+            const status = entry.status || 'unknown';
 
-        if (!deliveryTimelines[deliveryId]) {
-            deliveryTimelines[deliveryId] = {
-                events: []
-            };
+            if (!deliveryTimelinesUber[deliveryId]) {
+                deliveryTimelinesUber[deliveryId] = {
+                    events: []
+                };
+            }
+
+            deliveryTimelinesUber[deliveryId].events.push({
+                datetime: new Date(timestamp),
+                status
+            });
+
+        } else if ( entry.source == "envia") {
+            const deliveryId = entry.data.trackingNumber;
+            const timestamp = entry.timestamp;
+            const status = entry.data.status.toLowerCase() || 'unknown';
+
+            if (!deliveryTimelinesEnvia[deliveryId]) {
+                deliveryTimelinesEnvia[deliveryId] = {
+                    events: []
+                };
+            }
+
+            deliveryTimelinesEnvia[deliveryId].events.push({
+                datetime: new Date(timestamp),
+                status
+            });
         }
-
-        deliveryTimelines[deliveryId].events.push({
-            datetime: new Date(timestamp),
-            status
-        });
+        
     }
 
-    // Procesar cada delivery
-    for (const deliveryId in deliveryTimelines) {
-        const timeline = deliveryTimelines[deliveryId];
+    // Procesar tiempos de uber
+    for (const deliveryId in deliveryTimelinesUber) {
+        const timeline = deliveryTimelinesUber[deliveryId];
 
         // Ordenar eventos por timestamp
         timeline.events.sort((a, b) => a.datetime - b.datetime);
@@ -96,11 +129,6 @@ function processDeliveryData(logData) {
             minutos_para_pickup = Math.floor(diffMs / 60000);
         }
 
-        // if (eventMap.pickup_complete && eventMap.dropoff) {
-        //   const diffMs = eventMap.dropoff - eventMap.pickup_complete;
-        //   minutos_para_dropoff = Math.floor(diffMs / 60000);
-        // }
-
         if (eventMap.dropoff && eventMap.delivered) {
             const diffMs = eventMap.delivered - eventMap.dropoff;
             minutos_para_entregar = Math.floor(diffMs / 60000);
@@ -110,9 +138,44 @@ function processDeliveryData(logData) {
             delivery_id: deliveryId,
             minutos_para_asignar,
             minutos_para_pickup,
-            // minutos_para_dropoff,
             minutos_para_entregar,
             fecha_hora_creacion: eventMap.pending ?? null
+        };
+    }
+
+    // Procesar tiempos de envia
+    for (const deliveryId in deliveryTimelinesEnvia) {
+        const timeline = deliveryTimelinesEnvia[deliveryId];
+
+        // Ordenar eventos por timestamp
+        timeline.events.sort((a, b) => a.datetime - b.datetime);
+
+        // Mapear eventos por status
+        const eventMap = {};
+        for (const event of timeline.events) {
+            eventMap[event.status] = event.datetime;
+        }
+
+        let minutos_para_asignar = null;
+        let minutos_para_pickup = null;
+        let minutos_para_entregar = null;
+
+        if (eventMap.created && eventMap.shipped) {
+            const diffMs = eventMap.shipped - eventMap.created;
+            minutos_para_pickup = Math.floor(diffMs / 60000);
+        }
+
+        if (eventMap.shipped && eventMap.delivered) {
+            const diffMs = eventMap.delivered - eventMap.shipped;
+            minutos_para_entregar = Math.floor(diffMs / 60000);
+        }
+
+        results[deliveryId] = {
+            delivery_id: deliveryId,
+            minutos_para_asignar,
+            minutos_para_pickup,
+            minutos_para_entregar,
+            fecha_hora_creacion: eventMap.created ?? null
         };
     }
 
@@ -163,7 +226,7 @@ async function getAllDeliveryTimes() {
     const client = await pool.connect();
     try {
         const sql = `
-            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar
+            SELECT id_delivery, minutos_para_asignar, minutos_para_pickup, minutos_para_entregar, fecha_hora_creacion
             FROM delivery_tiempos
         `;
 
