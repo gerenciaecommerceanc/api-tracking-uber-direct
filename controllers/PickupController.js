@@ -99,7 +99,6 @@ function processDeliveryData(logData) {
                 status
             });
         }
-        
     }
 
     // Procesar tiempos de uber
@@ -121,17 +120,23 @@ function processDeliveryData(logData) {
 
         if (eventMap.pending && eventMap.pickup) {
             const diffMs = eventMap.pickup - eventMap.pending;
-            minutos_para_asignar = Math.floor(diffMs / 60000);
+            const minutes = Math.floor(diffMs / 60000);
+            const seconds = Math.floor((diffMs % 60000) / 1000);
+            minutos_para_asignar = `${minutes} minutes ${seconds} seconds`;
         }
 
         if (eventMap.pickup && eventMap.pickup_complete) {
             const diffMs = eventMap.pickup_complete - eventMap.pickup;
-            minutos_para_pickup = Math.floor(diffMs / 60000);
+            const minutes = Math.floor(diffMs / 60000);
+            const seconds = Math.floor((diffMs % 60000) / 1000);
+            minutos_para_pickup = `${minutes} minutes ${seconds} seconds`;
         }
 
         if (eventMap.dropoff && eventMap.delivered) {
             const diffMs = eventMap.delivered - eventMap.dropoff;
-            minutos_para_entregar = Math.floor(diffMs / 60000);
+            const minutes = Math.floor(diffMs / 60000);
+            const seconds = Math.floor((diffMs % 60000) / 1000);
+            minutos_para_entregar = `${minutes} minutes ${seconds} seconds`;
         }
 
         results[deliveryId] = {
@@ -163,12 +168,16 @@ function processDeliveryData(logData) {
 
         if (eventMap.created && eventMap.shipped) {
             const diffMs = eventMap.shipped - eventMap.created;
-            minutos_para_pickup = Math.floor(diffMs / 60000);
+            const minutes = Math.floor(diffMs / 60000);
+            const seconds = Math.floor((diffMs % 60000) / 1000);
+            minutos_para_pickup = `${minutes} minutes ${seconds} seconds`;
         }
 
         if (eventMap.shipped && eventMap.delivered) {
             const diffMs = eventMap.delivered - eventMap.shipped;
-            minutos_para_entregar = Math.floor(diffMs / 60000);
+            const minutes = Math.floor(diffMs / 60000);
+            const seconds = Math.floor((diffMs % 60000) / 1000);
+            minutos_para_entregar = `${minutes} minutes ${seconds} seconds`;
         }
 
         results[deliveryId] = {
