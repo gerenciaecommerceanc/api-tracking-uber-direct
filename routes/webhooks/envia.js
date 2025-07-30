@@ -23,7 +23,8 @@ router.post('/', (req, res) => {
     const data = req.body;
 
     if (
-        data
+        data &&
+        data.carrierName == "uber"
     ) {
         const logDir = path.join(__dirname, '../../logs');
         const logPath = path.join(logDir, 'envia.log');
