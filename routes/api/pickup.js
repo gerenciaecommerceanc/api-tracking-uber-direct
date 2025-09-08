@@ -19,8 +19,8 @@ router.use((req, res, next) => {
 });
 
 // Ruta POST save-deliveries
-router.post('/save-deliveries', (req, res) => {
-    const result = analyzeDeliveryEvents();
+router.post('/save-deliveries', async (req, res) => {
+    const result = await analyzeDeliveryEvents();
     res.status(result.error ? 500 : 200).json(result);
 })
 

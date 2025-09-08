@@ -204,8 +204,15 @@ async function processDeliveryData(logData) {
         const deliveriesPath = path.join(__dirname, '..', 'logs', 'deliveries.log');
 
         // Si todo salió bien, limpiar logs
-        await fs.writeFile(enviaPath, '');
-        await fs.writeFile(deliveriesPath, '');
+        fs.writeFile(enviaPath, '', (err) => {
+            if (err) console.error(err);
+            else console.log('envia.log vaciado');
+        });
+
+        fs.writeFile(deliveriesPath, '', (err) => {
+            if (err) console.error(err);
+            else console.log('deliveries.log vaciado');
+        });
 
         return {
             data: results
