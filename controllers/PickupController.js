@@ -48,6 +48,13 @@ function analyzeDeliveryEvents() {
 
         const allEvents = [...enviaEvents, ...uberEvents];
 
+        if (allEvents.length === 0) {
+            return { 
+                data: [], 
+                message: "Los logs estan vacios"
+            };
+        }
+
         return processDeliveryData(allEvents);
 
     } catch (err) {
@@ -59,142 +66,158 @@ function analyzeDeliveryEvents() {
     }
 }
 
-function processDeliveryData(logData) {
+async function processDeliveryData(logData) {
     const deliveryTimelinesUber = {};
     const deliveryTimelinesEnvia = {};
     const results = {};
 
-    // Agrupar eventos por delivery_id
-    for (const entry of logData) {
-        
-        if (entry.source == "uber") {
-            const deliveryId = entry.delivery_id;
-            const timestamp = entry.created;
-            const status = entry.status || 'unknown';
+    try {
+        // Agrupar eventos por delivery_id
+        for (const entry of logData) {
+            
+            if (entry.source == "uber") {
+                const deliveryId = entry.delivery_id;
+                const timestamp = entry.created;
+                const status = entry.status || 'unknown';
 
-            if (!deliveryTimelinesUber[deliveryId]) {
-                deliveryTimelinesUber[deliveryId] = {
-                    events: []
-                };
+                if (!deliveryTimelinesUber[deliveryId]) {
+                    deliveryTimelinesUber[deliveryId] = {
+                        events: []
+                    };
+                }
+
+                deliveryTimelinesUber[deliveryId].events.push({
+                    datetime: new Date(timestamp),
+                    status
+                });
+
+            } else if ( entry.source == "envia") {
+                const deliveryId = entry.data.trackingNumber;
+                const timestamp = entry.timestamp;
+                const status = entry.data.status.toLowerCase() || 'unknown';
+
+                if (!deliveryTimelinesEnvia[deliveryId]) {
+                    deliveryTimelinesEnvia[deliveryId] = {
+                        events: []
+                    };
+                }
+
+                deliveryTimelinesEnvia[deliveryId].events.push({
+                    datetime: new Date(timestamp),
+                    status
+                });
+            }
+        }
+
+        // Procesar tiempos de uber
+        for (const deliveryId in deliveryTimelinesUber) {
+            const timeline = deliveryTimelinesUber[deliveryId];
+
+            // Ordenar eventos por timestamp
+            timeline.events.sort((a, b) => a.datetime - b.datetime);
+
+            // Mapear eventos por status
+            const eventMap = {};
+            for (const event of timeline.events) {
+                eventMap[event.status] = event.datetime;
             }
 
-            deliveryTimelinesUber[deliveryId].events.push({
-                datetime: new Date(timestamp),
-                status
-            });
+            let minutos_para_asignar = null;
+            let minutos_para_pickup = null;
+            let minutos_para_entregar = null;
 
-        } else if ( entry.source == "envia") {
-            const deliveryId = entry.data.trackingNumber;
-            const timestamp = entry.timestamp;
-            const status = entry.data.status.toLowerCase() || 'unknown';
-
-            if (!deliveryTimelinesEnvia[deliveryId]) {
-                deliveryTimelinesEnvia[deliveryId] = {
-                    events: []
-                };
+            if (eventMap.pending && eventMap.pickup) {
+                const diffMs = eventMap.pickup - eventMap.pending;
+                const minutes = Math.floor(diffMs / 60000);
+                const seconds = Math.floor((diffMs % 60000) / 1000);
+                minutos_para_asignar = `${minutes} minutes ${seconds} seconds`;
             }
 
-            deliveryTimelinesEnvia[deliveryId].events.push({
-                datetime: new Date(timestamp),
-                status
-            });
-        }
-    }
+            if (eventMap.pickup && eventMap.pickup_complete) {
+                const diffMs = eventMap.pickup_complete - eventMap.pickup;
+                const minutes = Math.floor(diffMs / 60000);
+                const seconds = Math.floor((diffMs % 60000) / 1000);
+                minutos_para_pickup = `${minutes} minutes ${seconds} seconds`;
+            }
 
-    // Procesar tiempos de uber
-    for (const deliveryId in deliveryTimelinesUber) {
-        const timeline = deliveryTimelinesUber[deliveryId];
+            if (eventMap.dropoff && eventMap.delivered) {
+                const diffMs = eventMap.delivered - eventMap.dropoff;
+                const minutes = Math.floor(diffMs / 60000);
+                const seconds = Math.floor((diffMs % 60000) / 1000);
+                minutos_para_entregar = `${minutes} minutes ${seconds} seconds`;
+            }
 
-        // Ordenar eventos por timestamp
-        timeline.events.sort((a, b) => a.datetime - b.datetime);
-
-        // Mapear eventos por status
-        const eventMap = {};
-        for (const event of timeline.events) {
-            eventMap[event.status] = event.datetime;
-        }
-
-        let minutos_para_asignar = null;
-        let minutos_para_pickup = null;
-        let minutos_para_entregar = null;
-
-        if (eventMap.pending && eventMap.pickup) {
-            const diffMs = eventMap.pickup - eventMap.pending;
-            const minutes = Math.floor(diffMs / 60000);
-            const seconds = Math.floor((diffMs % 60000) / 1000);
-            minutos_para_asignar = `${minutes} minutes ${seconds} seconds`;
+            results[deliveryId] = {
+                delivery_id: deliveryId,
+                minutos_para_asignar,
+                minutos_para_pickup,
+                minutos_para_entregar,
+                fecha_hora_creacion: eventMap.pending ?? null,
+                fecha_hora_entrega: eventMap.delivered ?? null
+            };
         }
 
-        if (eventMap.pickup && eventMap.pickup_complete) {
-            const diffMs = eventMap.pickup_complete - eventMap.pickup;
-            const minutes = Math.floor(diffMs / 60000);
-            const seconds = Math.floor((diffMs % 60000) / 1000);
-            minutos_para_pickup = `${minutes} minutes ${seconds} seconds`;
+        // Procesar tiempos de envia
+        for (const deliveryId in deliveryTimelinesEnvia) {
+            const timeline = deliveryTimelinesEnvia[deliveryId];
+
+            // Ordenar eventos por timestamp
+            timeline.events.sort((a, b) => a.datetime - b.datetime);
+
+            // Mapear eventos por status
+            const eventMap = {};
+            for (const event of timeline.events) {
+                eventMap[event.status] = event.datetime;
+            }
+
+            let minutos_para_asignar = null;
+            let minutos_para_pickup = null;
+            let minutos_para_entregar = null;
+
+            if (eventMap.created && eventMap.shipped) {
+                const diffMs = eventMap.shipped - eventMap.created;
+                const minutes = Math.floor(diffMs / 60000);
+                const seconds = Math.floor((diffMs % 60000) / 1000);
+                minutos_para_pickup = `${minutes} minutes ${seconds} seconds`;
+            }
+
+            if (eventMap.shipped && eventMap.delivered) {
+                const diffMs = eventMap.delivered - eventMap.shipped;
+                const minutes = Math.floor(diffMs / 60000);
+                const seconds = Math.floor((diffMs % 60000) / 1000);
+                minutos_para_entregar = `${minutes} minutes ${seconds} seconds`;
+            }
+
+            results[deliveryId] = {
+                delivery_id: deliveryId,
+                minutos_para_asignar,
+                minutos_para_pickup,
+                minutos_para_entregar,
+                fecha_hora_creacion: eventMap.created ?? null,
+                fecha_hora_entrega: eventMap.delivered ?? null
+            };
         }
 
-        if (eventMap.dropoff && eventMap.delivered) {
-            const diffMs = eventMap.delivered - eventMap.dropoff;
-            const minutes = Math.floor(diffMs / 60000);
-            const seconds = Math.floor((diffMs % 60000) / 1000);
-            minutos_para_entregar = `${minutes} minutes ${seconds} seconds`;
-        }
+        await saveDelivery(results);
 
-        results[deliveryId] = {
-            delivery_id: deliveryId,
-            minutos_para_asignar,
-            minutos_para_pickup,
-            minutos_para_entregar,
-            fecha_hora_creacion: eventMap.pending ?? null,
-            fecha_hora_entrega: eventMap.delivered ?? null
+        const enviaPath = path.join(__dirname, '..', 'logs', 'envia.log');
+        const deliveriesPath = path.join(__dirname, '..', 'logs', 'deliveries.log');
+
+        // Si todo salió bien, limpiar logs
+        await fs.writeFile(enviaPath, '');
+        await fs.writeFile(deliveriesPath, '');
+
+        return {
+            data: results
+        };
+
+    } catch (err) {
+        console.error('Error en processDeliveryData:', err);
+        return {
+            error: true,
+            data: []
         };
     }
-
-    // Procesar tiempos de envia
-    for (const deliveryId in deliveryTimelinesEnvia) {
-        const timeline = deliveryTimelinesEnvia[deliveryId];
-
-        // Ordenar eventos por timestamp
-        timeline.events.sort((a, b) => a.datetime - b.datetime);
-
-        // Mapear eventos por status
-        const eventMap = {};
-        for (const event of timeline.events) {
-            eventMap[event.status] = event.datetime;
-        }
-
-        let minutos_para_asignar = null;
-        let minutos_para_pickup = null;
-        let minutos_para_entregar = null;
-
-        if (eventMap.created && eventMap.shipped) {
-            const diffMs = eventMap.shipped - eventMap.created;
-            const minutes = Math.floor(diffMs / 60000);
-            const seconds = Math.floor((diffMs % 60000) / 1000);
-            minutos_para_pickup = `${minutes} minutes ${seconds} seconds`;
-        }
-
-        if (eventMap.shipped && eventMap.delivered) {
-            const diffMs = eventMap.delivered - eventMap.shipped;
-            const minutes = Math.floor(diffMs / 60000);
-            const seconds = Math.floor((diffMs % 60000) / 1000);
-            minutos_para_entregar = `${minutes} minutes ${seconds} seconds`;
-        }
-
-        results[deliveryId] = {
-            delivery_id: deliveryId,
-            minutos_para_asignar,
-            minutos_para_pickup,
-            minutos_para_entregar,
-            fecha_hora_creacion: eventMap.created ?? null,
-            fecha_hora_entrega: eventMap.delivered ?? null
-        };
-    }
-
-    saveDelivery(results);
-
-    return {
-        data: results
-    };
 }
 
 async function saveDelivery(data) {
@@ -231,6 +254,7 @@ async function saveDelivery(data) {
         }
     } catch (err) {
         console.error('Error al guardar evento:', err.message);
+        throw err;
     } finally {
         client.release();
     }
